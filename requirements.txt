@@ -1,4 +1,8 @@
-streamlit
-yfinance
-pandas
-requests
+streamlit>=1.32.0
+yfinance>=0.2.38
+pandas>=2.0.0
+requests>=2.31.0
+numpy>=1.26.0
+urllib3>=2.0.0
+lxml>=4.9.0
+html5lib>=1.1
