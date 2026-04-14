@@ -1,6 +1,7 @@
 # ╔══════════════════════════════════════════════════════════════════════╗
-# ║  台股全市場選股器 v5.0 — Streamlit 網頁版（v5.0.2 修復版）           ║
-# ║  修復：applymap → map（Pandas 2.x 相容）+ 側邊欄可讀性優化          ║
+# ║  台股全市場選股器 v5.0 — Streamlit 網頁版（v5.0.3）                  ║
+# ║  修復：移除 background_gradient（不再依賴 matplotlib）               ║
+# ║        改用純 CSS 手動著色，跨環境零依賴                              ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 
 import streamlit as st
@@ -27,99 +28,225 @@ st.set_page_config(
 )
 
 # ════════════════════════════════════════════════════════════════════════
-# 【CSS 樣式】修復側邊欄可讀性
+# 【CSS 樣式】
 # ════════════════════════════════════════════════════════════════════════
 st.markdown("""
 <style>
-    /* ── 主標題區塊 ── */
     .main-header {
         background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-        padding: 2rem;
-        border-radius: 12px;
-        margin-bottom: 1.5rem;
-        border: 1px solid #e94560;
-        text-align: center;
+        padding: 2rem; border-radius: 12px; margin-bottom: 1.5rem;
+        border: 1px solid #e94560; text-align: center;
     }
     .main-header h1 {
-        color: #e94560;
-        font-size: 2.2rem;
-        margin: 0;
+        color: #e94560; font-size: 2.2rem; margin: 0;
         text-shadow: 0 0 20px rgba(233,69,96,0.5);
     }
-    .main-header p {
-        color: #a8b2d8;
-        margin: 0.5rem 0 0 0;
-        font-size: 1rem;
-    }
+    .main-header p { color: #a8b2d8; margin: 0.5rem 0 0 0; font-size: 1rem; }
 
-    /* ── 股票卡片 ── */
     .stock-card {
         background: linear-gradient(135deg, #1a1a2e, #16213e);
-        border: 1px solid #e94560;
-        border-radius: 10px;
-        padding: 1rem 1.5rem;
-        margin: 0.5rem 0;
+        border: 1px solid #e94560; border-radius: 10px;
+        padding: 1rem 1.5rem; margin: 0.5rem 0;
     }
     .stock-card .ticker { color: #e94560; font-size: 1.3rem; font-weight: bold; }
     .stock-card .name   { color: #a8b2d8; font-size: 0.9rem; }
     .stock-card .score  { color: #ffaa44; font-size: 1.8rem; font-weight: bold; }
     .stock-card .price  { color: #66ff88; font-size: 1.1rem; }
 
-    /* ── 分隔線 ── */
-    .section-divider {
-        border: none;
-        border-top: 1px solid #2d3561;
-        margin: 1.5rem 0;
-    }
+    .section-divider { border: none; border-top: 1px solid #2d3561; margin: 1.5rem 0; }
 
-    /* ── Metric 卡片 ── */
     [data-testid="metric-container"] {
-        background: #1a1a2e;
-        border: 1px solid #2d3561;
-        border-radius: 8px;
-        padding: 1rem;
+        background: #1a1a2e; border: 1px solid #2d3561;
+        border-radius: 8px; padding: 1rem;
     }
 
-    /* ══════════════════════════════════════════════
-       側邊欄：改為淺色背景，確保文字清晰可讀
-    ══════════════════════════════════════════════ */
-    [data-testid="stSidebar"] {
-        background-color: #f0f2f6 !important;
-    }
-    [data-testid="stSidebar"] * {
-        color: #1a1a2e !important;
-    }
-    [data-testid="stSidebar"] .stSlider label,
-    [data-testid="stSidebar"] .stRadio label,
-    [data-testid="stSidebar"] .stToggle label,
-    [data-testid="stSidebar"] p,
-    [data-testid="stSidebar"] span,
-    [data-testid="stSidebar"] div {
-        color: #1a1a2e !important;
-    }
-    /* 側邊欄標題顏色 */
+    /* 側邊欄：淺色背景確保可讀 */
+    [data-testid="stSidebar"] { background-color: #f0f2f6 !important; }
+    [data-testid="stSidebar"] * { color: #1a1a2e !important; }
     [data-testid="stSidebar"] h1,
     [data-testid="stSidebar"] h2,
-    [data-testid="stSidebar"] h3 {
-        color: #0f3460 !important;
-    }
-    /* 側邊欄按鈕 */
+    [data-testid="stSidebar"] h3 { color: #0f3460 !important; }
     [data-testid="stSidebar"] .stButton > button {
         background: linear-gradient(90deg, #e94560, #0f3460);
-        color: white !important;
-        font-weight: bold;
-        border: none;
-        border-radius: 8px;
+        color: white !important; font-weight: bold;
+        border: none; border-radius: 8px;
     }
-    [data-testid="stSidebar"] .stButton > button:hover {
-        opacity: 0.85;
-    }
-    /* 側邊欄分隔線 */
-    [data-testid="stSidebar"] hr {
-        border-color: #c0c8d8 !important;
-    }
+    [data-testid="stSidebar"] hr { border-color: #c0c8d8 !important; }
 </style>
 """, unsafe_allow_html=True)
+
+
+# ════════════════════════════════════════════════════════════════════════
+# 【樣式輔助函式】純 CSS 著色，完全不依賴 matplotlib
+# ════════════════════════════════════════════════════════════════════════
+
+def _score_to_color(score) -> str:
+    """推薦指數 60~100 → 黃橙紅漸層背景色"""
+    try:
+        v = float(score)
+    except (TypeError, ValueError):
+        return ""
+    t = max(0.0, min(1.0, (v - 60) / 40))   # 0.0（60分）~ 1.0（100分）
+    r = int(255)
+    g = int(255 * (1 - t * 0.85))
+    b = int(50  * (1 - t))
+    return f"background-color: rgb({r},{g},{b}); color: #1a1a2e; font-weight: bold;"
+
+
+def _volratio_to_color(val) -> str:
+    """量比 2.5~8 → 白→深紅漸層"""
+    try:
+        v = float(val)
+    except (TypeError, ValueError):
+        return ""
+    t = max(0.0, min(1.0, (v - 2.5) / 5.5))
+    r = int(255)
+    g = int(220 * (1 - t))
+    b = int(220 * (1 - t))
+    return f"background-color: rgb({r},{g},{b}); color: #1a1a2e;"
+
+
+def _chg_to_color(val) -> str:
+    """漲幅 -2~+10 → 紅綠漸層"""
+    try:
+        v = float(val)
+    except (TypeError, ValueError):
+        return ""
+    if v >= 0:
+        t = min(1.0, v / 10)
+        g = int(180 + 75 * t)
+        return f"background-color: rgb(50,{g},50); color: #ffffff;"
+    else:
+        t = min(1.0, abs(v) / 5)
+        r = int(180 + 75 * t)
+        return f"background-color: rgb({r},50,50); color: #ffffff;"
+
+
+def _tangle_to_color(val) -> str:
+    """均線糾結度 0~0.05 → 深紫→白（越小越紫）"""
+    try:
+        v = float(val)
+    except (TypeError, ValueError):
+        return ""
+    t = max(0.0, min(1.0, v / 0.05))
+    r = int(80  + 175 * t)
+    g = int(40  + 215 * t)
+    b = int(160 + 95  * t)
+    return f"background-color: rgb({r},{g},{b}); color: {'#fff' if t < 0.5 else '#1a1a2e'};"
+
+
+def style_result_df(df: pd.DataFrame):
+    """
+    套用純 CSS 樣式到結果 DataFrame。
+    完全不使用 background_gradient，零 matplotlib 依賴。
+    """
+
+    def highlight_grade(val):
+        s = str(val)
+        if "S級" in s:
+            return "background-color:#7b2d00;color:#ff9944;font-weight:bold"
+        elif "A級" in s:
+            return "background-color:#1a3a1a;color:#66ff66;font-weight:bold"
+        elif "B級" in s:
+            return "background-color:#1a1a3a;color:#8888ff"
+        return ""
+
+    def highlight_gap(val):
+        if "🚀" in str(val):
+            return "background-color:#2d1a4a;color:#cc88ff;font-weight:bold"
+        return "color:#888888"
+
+    fmt = {
+        "推薦指數"      : "{} 分",
+        "收盤價"        : "{:.2f}",
+        "漲幅(%)"       : "{:+.2f}%",
+        "量比(倍)"      : "{:.2f}x",
+        "月線斜率(%)"   : "{:+.3f}%",
+        "距月線乖離(%)" : "{:.2f}%",
+        "實體比例"      : "{:.1%}",
+        "均線糾結度"    : lambda x: f"{x:.2%}" if pd.notna(x) else "N/A",
+        "跳空缺口(%)"   : "{:+.2f}%",
+    }
+    fmt = {k: v for k, v in fmt.items() if k in df.columns}
+
+    # ── 使用 Styler.apply（逐欄著色，不依賴 matplotlib）────────────
+    styled = df.style
+
+    if "推薦指數" in df.columns:
+        styled = styled.apply(
+            lambda col: [_score_to_color(v) for v in col],
+            subset=["推薦指數"]
+        )
+    if "量比(倍)" in df.columns:
+        styled = styled.apply(
+            lambda col: [_volratio_to_color(v) for v in col],
+            subset=["量比(倍)"]
+        )
+    if "漲幅(%)" in df.columns:
+        styled = styled.apply(
+            lambda col: [_chg_to_color(v) for v in col],
+            subset=["漲幅(%)"]
+        )
+    if "均線糾結度" in df.columns:
+        styled = styled.apply(
+            lambda col: [_tangle_to_color(v) for v in col],
+            subset=["均線糾結度"]
+        )
+
+    # ── map 相容新舊 Pandas ─────────────────────────────────────────
+    pd_ver = tuple(int(x) for x in pd.__version__.split(".")[:2])
+    apply_map = styled.map if pd_ver >= (2, 1) else styled.applymap
+
+    if "推薦等級"   in df.columns:
+        styled = apply_map(highlight_grade, subset=["推薦等級"])
+    if "有跳空缺口" in df.columns:
+        styled = apply_map(highlight_gap,   subset=["有跳空缺口"])
+
+    return styled.format(fmt, na_rep="N/A")
+
+
+def style_score_df(df: pd.DataFrame):
+    """套用樣式到加分明細 DataFrame，純 CSS 著色。"""
+
+    def score_color(val, vmin, vmax, r_base, g_base, b_base):
+        try:
+            v = float(val)
+        except (TypeError, ValueError):
+            return ""
+        t = max(0.0, min(1.0, (v - vmin) / max(vmax - vmin, 1)))
+        r = int(r_base * t)
+        g = int(g_base * t)
+        b = int(b_base * t)
+        return (f"background-color: rgb({min(255,r+40)},{min(255,g+40)},{min(255,b+40)});"
+                f"color: {'#fff' if t > 0.4 else '#1a1a2e'};")
+
+    fmt = {
+        "推薦指數"    : "{} 分",
+        "基礎分"      : "{} 分",
+        "爆發力加分"  : "+{} 分",
+        "籌碼集中加分": "+{} 分",
+        "鎖碼強勢加分": "+{} 分",
+        "跳空加分"    : "+{} 分",
+    }
+    fmt    = {k: v for k, v in fmt.items() if k in df.columns}
+    styled = df.style
+
+    col_cfg = {
+        "推薦指數"    : (60, 100, 255, 160,  0),
+        "爆發力加分"  : ( 0,  15, 220,  50, 50),
+        "籌碼集中加分": ( 0,  10, 120,  50, 200),
+        "鎖碼強勢加分": ( 0,  10,  50, 100, 220),
+        "跳空加分"    : ( 0,   5,  50, 180,  80),
+    }
+    for col, (vmin, vmax, r, g, b) in col_cfg.items():
+        if col in df.columns:
+            styled = styled.apply(
+                lambda c, vmin=vmin, vmax=vmax, r=r, g=g, b=b:
+                    [score_color(v, vmin, vmax, r, g, b) for v in c],
+                subset=[col]
+            )
+
+    return styled.format(fmt, na_rep="N/A")
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -134,7 +261,6 @@ def get_all_stocks() -> pd.DataFrame:
                       "Chrome/120.0.0.0 Safari/537.36"
     }
 
-    # ── 上市（TWSE）────────────────────────────────────────────────
     df_twse = pd.DataFrame()
     try:
         url = "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"
@@ -148,7 +274,7 @@ def get_all_stocks() -> pd.DataFrame:
         df["市場"]   = "上市(TWSE)"
         df_twse = df
     except Exception as e:
-        st.warning(f"⚠️ 上市清單主要來源失敗：{e}，嘗試備用方案...")
+        st.warning(f"⚠️ 上市清單主要來源失敗：{e}")
         try:
             url = "https://isin.twse.com.tw/isin/C_public.jsp?strMode=2"
             res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"},
@@ -170,7 +296,6 @@ def get_all_stocks() -> pd.DataFrame:
         except Exception as e2:
             st.error(f"❌ 上市清單備用方案失敗：{e2}")
 
-    # ── 上櫃（TPEx）────────────────────────────────────────────────
     df_tpex = pd.DataFrame()
     try:
         url = "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes"
@@ -184,7 +309,7 @@ def get_all_stocks() -> pd.DataFrame:
         df["市場"]   = "上櫃(TPEx)"
         df_tpex = df
     except Exception as e:
-        st.warning(f"⚠️ 上櫃清單主要來源失敗：{e}，嘗試備用方案...")
+        st.warning(f"⚠️ 上櫃清單主要來源失敗：{e}")
         try:
             url = "https://isin.twse.com.tw/isin/C_public.jsp?strMode=4"
             res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"},
@@ -368,7 +493,7 @@ def apply_filter_v5(
     cr             = df["High"] - df["Low"]
     df["body_pct"] = (df["Close"] - df["Low"]) / cr.replace(0, float("nan"))
 
-    ma5p = df["ma5"].shift(1)
+    ma5p  = df["ma5"].shift(1)
     ma10p = df["ma10"].shift(1)
     ma20p = df["ma20"].shift(1)
     stk   = pd.concat([ma5p, ma10p, ma20p], axis=1)
@@ -449,108 +574,11 @@ def apply_filter_v5(
 
 
 # ════════════════════════════════════════════════════════════════════════
-# 【模組五】DataFrame 樣式
-# ✅ 修復：applymap → map（Pandas 2.x 相容）
-# ════════════════════════════════════════════════════════════════════════
-
-def _safe_map(styled, func, subset):
-    """
-    相容 Pandas 新舊版本：
-      Pandas >= 2.1 → 使用 map()
-      Pandas <  2.1 → 使用 applymap()
-    """
-    pd_version = tuple(int(x) for x in pd.__version__.split(".")[:2])
-    if pd_version >= (2, 1):
-        return styled.map(func, subset=subset)
-    else:
-        return styled.applymap(func, subset=subset)
-
-
-def style_result_df(df: pd.DataFrame):
-    """套用漸層顏色樣式到結果 DataFrame。"""
-
-    def highlight_grade(val):
-        if "S級" in str(val):
-            return "background-color:#7b2d00;color:#ff9944;font-weight:bold"
-        elif "A級" in str(val):
-            return "background-color:#1a3a1a;color:#66ff66;font-weight:bold"
-        elif "B級" in str(val):
-            return "background-color:#1a1a3a;color:#8888ff"
-        return ""
-
-    def highlight_gap(val):
-        if "🚀" in str(val):
-            return "background-color:#2d1a4a;color:#cc88ff;font-weight:bold"
-        return "color:#666666"
-
-    fmt = {
-        "推薦指數"      : "{} 分",
-        "收盤價"        : "{:.2f}",
-        "漲幅(%)"       : "{:+.2f}%",
-        "量比(倍)"      : "{:.2f}x",
-        "月線斜率(%)"   : "{:+.3f}%",
-        "距月線乖離(%)" : "{:.2f}%",
-        "實體比例"      : "{:.1%}",
-        "均線糾結度"    : lambda x: f"{x:.2%}" if pd.notna(x) else "N/A",
-        "跳空缺口(%)"   : "{:+.2f}%",
-    }
-    fmt = {k: v for k, v in fmt.items() if k in df.columns}
-
-    styled = df.style
-    grad_cols = {
-        "推薦指數"  : ("YlOrRd",    60,  100),
-        "量比(倍)"  : ("Reds",     2.5,    8),
-        "漲幅(%)"   : ("RdYlGn",   -2,    10),
-        "均線糾結度": ("Purples_r",  0, 0.05),
-    }
-    for col, (cmap, vmin, vmax) in grad_cols.items():
-        if col in df.columns:
-            styled = styled.background_gradient(
-                subset=[col], cmap=cmap, vmin=vmin, vmax=vmax
-            )
-
-    if "推薦等級"   in df.columns:
-        styled = _safe_map(styled, highlight_grade, subset=["推薦等級"])
-    if "有跳空缺口" in df.columns:
-        styled = _safe_map(styled, highlight_gap,   subset=["有跳空缺口"])
-
-    return styled.format(fmt, na_rep="N/A")
-
-
-def style_score_df(df: pd.DataFrame):
-    """套用樣式到加分明細 DataFrame。"""
-    fmt = {
-        "推薦指數"    : "{} 分",
-        "基礎分"      : "{} 分",
-        "爆發力加分"  : "+{} 分",
-        "籌碼集中加分": "+{} 分",
-        "鎖碼強勢加分": "+{} 分",
-        "跳空加分"    : "+{} 分",
-    }
-    fmt    = {k: v for k, v in fmt.items() if k in df.columns}
-    styled = df.style
-    grad   = {
-        "推薦指數"    : ("YlOrRd",  60, 100),
-        "爆發力加分"  : ("Reds",     0,  15),
-        "籌碼集中加分": ("Purples",  0,  10),
-        "鎖碼強勢加分": ("Blues",    0,  10),
-        "跳空加分"    : ("Greens",   0,   5),
-    }
-    for col, (cmap, vmin, vmax) in grad.items():
-        if col in df.columns:
-            styled = styled.background_gradient(
-                subset=[col], cmap=cmap, vmin=vmin, vmax=vmax
-            )
-    return styled.format(fmt, na_rep="N/A")
-
-
-# ════════════════════════════════════════════════════════════════════════
 # 【主程式 UI】
 # ════════════════════════════════════════════════════════════════════════
 
 def main():
 
-    # ── 主標題 ──────────────────────────────────────────────────────
     st.markdown("""
     <div class="main-header">
         <h1>🏆 台股全市場選股器 v5.0</h1>
@@ -559,7 +587,7 @@ def main():
     """, unsafe_allow_html=True)
 
     # ════════════════════════════════════════════════════════════════
-    # 【側邊欄：參數設定】
+    # 【側邊欄】
     # ════════════════════════════════════════════════════════════════
     with st.sidebar:
         st.markdown("## ⚙️ 策略參數調整")
@@ -571,13 +599,11 @@ def main():
             ["🏢 上市 + 上櫃（全市場）", "🏢 僅上市（TWSE）", "🏪 僅上櫃（TPEx）"],
             index=0,
         )
-
         lite_mode = st.toggle(
             "⚡ 輕量模式（雲端推薦）",
             value=True,
-            help="只掃描前 300 檔，避免雲端記憶體不足。本機執行可關閉。"
+            help="只掃描前 300 檔，避免雲端記憶體不足。"
         )
-
         lookback_days = st.slider("歷史資料天數",  45,  90,  60,  5)
         batch_size    = st.slider("批次下載大小",  20, 100,  50, 10)
 
@@ -600,7 +626,6 @@ def main():
             type="primary",
             use_container_width=True,
         )
-
         st.markdown("---")
         st.markdown(
             "<div style='font-size:0.8rem;text-align:center;color:#555;'>"
@@ -610,7 +635,7 @@ def main():
         )
 
     # ════════════════════════════════════════════════════════════════
-    # 【說明頁（未掃描時）】
+    # 【說明頁】
     # ════════════════════════════════════════════════════════════════
     if not scan_button:
         col1, col2 = st.columns(2)
@@ -692,7 +717,6 @@ def main():
     with st.status("📋 步驟 1/3：抓取全台股清單...", expanded=True) as status:
         st.write("正在從證交所與櫃買中心取得股票代號清單...")
         df_all_stocks = get_all_stocks()
-
         if df_all_stocks.empty:
             st.error("❌ 無法取得股票清單，請稍後再試。")
             return
@@ -711,7 +735,7 @@ def main():
         status.update(label=f"✅ 步驟 1/3 完成：取得 {total_stocks:,} 檔", state="complete")
 
     # ════════════════════════════════════════════════════════════════
-    # 【步驟二】批次下載歷史資料
+    # 【步驟二】批次下載
     # ════════════════════════════════════════════════════════════════
     with st.status("📥 步驟 2/3：批次下載歷史資料...", expanded=True) as status:
         st.write(f"開始下載 {total_stocks:,} 檔股票的歷史 K 線資料...")
@@ -725,7 +749,6 @@ def main():
             progress_bar  = progress_bar,
             status_text   = status_text,
         )
-
         progress_bar.progress(1.0, text="✅ 下載完成！")
         status_text.empty()
         success_count = len(all_data)
@@ -737,7 +760,6 @@ def main():
     # ════════════════════════════════════════════════════════════════
     with st.status("🔍 步驟 3/3：執行選股與評分...", expanded=True) as status:
         st.write("套用 7 道基礎過濾條件並計算推薦指數...")
-
         market_map    = dict(zip(df_all_stocks["YF代號"], df_all_stocks["市場"]))
         name_map      = dict(zip(df_all_stocks["YF代號"], df_all_stocks["名稱"]))
         results       = []
@@ -779,7 +801,6 @@ def main():
         """)
         return
 
-    # ── 建立主 DataFrame ────────────────────────────────────────────
     df_result = pd.DataFrame(results)
     df_result = df_result.sort_values(
         ["推薦指數", "量比(倍)"], ascending=[False, False]
@@ -805,9 +826,7 @@ def main():
 
     st.markdown("<hr class='section-divider'>", unsafe_allow_html=True)
 
-    # ════════════════════════════════════════════════════════════════
-    # 【區塊一】🔥 核心推薦清單（S級）
-    # ════════════════════════════════════════════════════════════════
+    # ── S 級卡片 + 精簡表 ────────────────────────────────────────────
     st.markdown("## 🔥 核心推薦標的")
     st.markdown(f"*推薦指數 ≥ {grade_s_min} 分的 S 級強烈推薦標的*")
 
@@ -862,11 +881,8 @@ def main():
 
     st.markdown("<hr class='section-divider'>", unsafe_allow_html=True)
 
-    # ════════════════════════════════════════════════════════════════
-    # 【區塊二】完整評分詳細表（分頁）
-    # ════════════════════════════════════════════════════════════════
+    # ── 完整分頁表格 ─────────────────────────────────────────────────
     st.markdown("## 📊 完整評分詳細表")
-
     tab_all, tab_s, tab_a, tab_b, tab_score = st.tabs([
         f"🔢 全部（{len(df_result)}）",
         f"🔥 S級（{len(df_s)}）",
@@ -883,8 +899,7 @@ def main():
         "MA5","MA10","MA20",
         "月線斜率(%)","距月線乖離(%)",
         "實體比例","均線糾結度",
-        "跳空缺口(%)","有跳空缺口",
-        "訊號日期",
+        "跳空缺口(%)","有跳空缺口","訊號日期",
     ]
     detail_cols = [c for c in detail_cols if c in df_result.columns]
 
@@ -894,17 +909,13 @@ def main():
             return
         d = df_sub[detail_cols].reset_index(drop=True)
         d.index += 1
-        st.dataframe(
-            style_result_df(d),
-            use_container_width=True,
-            height=min(600, 50 + len(d) * 38)
-        )
+        st.dataframe(style_result_df(d), use_container_width=True,
+                     height=min(600, 50 + len(d) * 38))
 
-    with tab_all:   show_tab(df_result)
-    with tab_s:     show_tab(df_s)
-    with tab_a:     show_tab(df_a)
-    with tab_b:     show_tab(df_b)
-
+    with tab_all:  show_tab(df_result)
+    with tab_s:    show_tab(df_s)
+    with tab_a:    show_tab(df_a)
+    with tab_b:    show_tab(df_b)
     with tab_score:
         st.markdown("#### 🔬 推薦指數加分明細")
         sc = ["代號","公司名稱","推薦指數","基礎分",
@@ -912,26 +923,19 @@ def main():
         sc    = [c for c in sc if c in df_result.columns]
         df_sc = df_result[sc].reset_index(drop=True)
         df_sc.index += 1
-        st.dataframe(
-            style_score_df(df_sc),
-            use_container_width=True,
-            height=min(600, 50 + len(df_sc) * 38)
-        )
+        st.dataframe(style_score_df(df_sc), use_container_width=True,
+                     height=min(600, 50 + len(df_sc) * 38))
 
     st.markdown("<hr class='section-divider'>", unsafe_allow_html=True)
 
-    # ════════════════════════════════════════════════════════════════
-    # 【區塊三】統計圖表
-    # ════════════════════════════════════════════════════════════════
+    # ── 統計圖表 ─────────────────────────────────────────────────────
     st.markdown("## 📈 統計分析")
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("#### 推薦等級分佈")
         st.bar_chart(
-            pd.DataFrame(
-                {"標的數": [len(df_s), len(df_a), len(df_b)]},
-                index=["🔥 S級", "⭐ A級", "👀 B級"]
-            ),
+            pd.DataFrame({"標的數": [len(df_s), len(df_a), len(df_b)]},
+                         index=["🔥 S級", "⭐ A級", "👀 B級"]),
             color="#e94560"
         )
     with c2:
@@ -942,32 +946,28 @@ def main():
 
     st.markdown("<hr class='section-divider'>", unsafe_allow_html=True)
 
-    # ════════════════════════════════════════════════════════════════
-    # 【區塊四】CSV 下載
-    # ════════════════════════════════════════════════════════════════
+    # ── CSV 下載 ─────────────────────────────────────────────────────
     st.markdown("## 💾 下載結果")
     today_file = datetime.now().strftime("%Y%m%d_%H%M")
     dl1, dl2   = st.columns(2)
-
     with dl1:
         st.download_button(
-            label               = "📥 下載完整結果 CSV",
-            data                = df_result.to_csv(encoding="utf-8-sig", index=True),
-            file_name           = f"台股選股_v5_{today_file}.csv",
-            mime                = "text/csv",
-            use_container_width = True,
+            label="📥 下載完整結果 CSV",
+            data=df_result.to_csv(encoding="utf-8-sig", index=True),
+            file_name=f"台股選股_v5_{today_file}.csv",
+            mime="text/csv",
+            use_container_width=True,
         )
     with dl2:
         if not df_s.empty:
             st.download_button(
-                label               = "🔥 下載 S 級推薦 CSV",
-                data                = df_s.to_csv(encoding="utf-8-sig", index=True),
-                file_name           = f"台股S級推薦_v5_{today_file}.csv",
-                mime                = "text/csv",
-                use_container_width = True,
+                label="🔥 下載 S 級推薦 CSV",
+                data=df_s.to_csv(encoding="utf-8-sig", index=True),
+                file_name=f"台股S級推薦_v5_{today_file}.csv",
+                mime="text/csv",
+                use_container_width=True,
             )
 
-    # ── 風險提示 ──────────────────────────────────────────────────────
     st.markdown("<hr class='section-divider'>", unsafe_allow_html=True)
     st.warning("""
 ⚠️ **風險提示**：本系統為純技術面輔助工具，推薦指數不代表必然上漲。
@@ -976,8 +976,5 @@ S 級標的仍需搭配基本面與籌碼面確認，並設定明確停損點後
     """)
 
 
-# ════════════════════════════════════════════════════════════════════════
-# 【程式進入點】
-# ════════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
     main()
