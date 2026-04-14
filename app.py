@@ -1,6 +1,6 @@
 # ╔══════════════════════════════════════════════════════════════════════╗
-# ║  台股全市場選股器 v5.0 — Streamlit 網頁版（SSL 修復版）              ║
-# ║  執行方式：streamlit run app.py                                      ║
+# ║  台股全市場選股器 v5.0 — Streamlit 網頁版（v5.0.2 修復版）           ║
+# ║  修復：applymap → map（Pandas 2.x 相容）+ 側邊欄可讀性優化          ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 
 import streamlit as st
@@ -12,26 +12,26 @@ import time
 import warnings
 from datetime import datetime, timedelta
 
-# ── SSL 修復：停用憑證驗證警告 ──────────────────────────────────────────
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 warnings.filterwarnings("ignore")
 
 # ════════════════════════════════════════════════════════════════════════
-# 【頁面基礎設定】必須是第一個 Streamlit 呼叫
+# 【頁面設定】
 # ════════════════════════════════════════════════════════════════════════
 st.set_page_config(
-    page_title           = "台股選股器 v5.0",
-    page_icon            = "🏆",
-    layout               = "wide",
-    initial_sidebar_state= "expanded",
+    page_title            = "台股選股器 v5.0",
+    page_icon             = "🏆",
+    layout                = "wide",
+    initial_sidebar_state = "expanded",
 )
 
 # ════════════════════════════════════════════════════════════════════════
-# 【全域 CSS 樣式】
+# 【CSS 樣式】修復側邊欄可讀性
 # ════════════════════════════════════════════════════════════════════════
 st.markdown("""
 <style>
+    /* ── 主標題區塊 ── */
     .main-header {
         background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
         padding: 2rem;
@@ -40,9 +40,19 @@ st.markdown("""
         border: 1px solid #e94560;
         text-align: center;
     }
-    .main-header h1 { color: #e94560; font-size: 2.2rem; margin: 0; text-shadow: 0 0 20px rgba(233,69,96,0.5); }
-    .main-header p  { color: #a8b2d8; margin: 0.5rem 0 0 0; font-size: 1rem; }
+    .main-header h1 {
+        color: #e94560;
+        font-size: 2.2rem;
+        margin: 0;
+        text-shadow: 0 0 20px rgba(233,69,96,0.5);
+    }
+    .main-header p {
+        color: #a8b2d8;
+        margin: 0.5rem 0 0 0;
+        font-size: 1rem;
+    }
 
+    /* ── 股票卡片 ── */
     .stock-card {
         background: linear-gradient(135deg, #1a1a2e, #16213e);
         border: 1px solid #e94560;
@@ -55,30 +65,69 @@ st.markdown("""
     .stock-card .score  { color: #ffaa44; font-size: 1.8rem; font-weight: bold; }
     .stock-card .price  { color: #66ff88; font-size: 1.1rem; }
 
-    .section-divider { border: none; border-top: 1px solid #2d3561; margin: 1.5rem 0; }
+    /* ── 分隔線 ── */
+    .section-divider {
+        border: none;
+        border-top: 1px solid #2d3561;
+        margin: 1.5rem 0;
+    }
 
+    /* ── Metric 卡片 ── */
     [data-testid="metric-container"] {
         background: #1a1a2e;
         border: 1px solid #2d3561;
         border-radius: 8px;
         padding: 1rem;
     }
-    [data-testid="stSidebar"] { background: #0d1117; }
+
+    /* ══════════════════════════════════════════════
+       側邊欄：改為淺色背景，確保文字清晰可讀
+    ══════════════════════════════════════════════ */
+    [data-testid="stSidebar"] {
+        background-color: #f0f2f6 !important;
+    }
+    [data-testid="stSidebar"] * {
+        color: #1a1a2e !important;
+    }
+    [data-testid="stSidebar"] .stSlider label,
+    [data-testid="stSidebar"] .stRadio label,
+    [data-testid="stSidebar"] .stToggle label,
+    [data-testid="stSidebar"] p,
+    [data-testid="stSidebar"] span,
+    [data-testid="stSidebar"] div {
+        color: #1a1a2e !important;
+    }
+    /* 側邊欄標題顏色 */
+    [data-testid="stSidebar"] h1,
+    [data-testid="stSidebar"] h2,
+    [data-testid="stSidebar"] h3 {
+        color: #0f3460 !important;
+    }
+    /* 側邊欄按鈕 */
+    [data-testid="stSidebar"] .stButton > button {
+        background: linear-gradient(90deg, #e94560, #0f3460);
+        color: white !important;
+        font-weight: bold;
+        border: none;
+        border-radius: 8px;
+    }
+    [data-testid="stSidebar"] .stButton > button:hover {
+        opacity: 0.85;
+    }
+    /* 側邊欄分隔線 */
+    [data-testid="stSidebar"] hr {
+        border-color: #c0c8d8 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 
 # ════════════════════════════════════════════════════════════════════════
-# 【模組一】股票清單抓取（SSL 修復版）
+# 【模組一】股票清單抓取
 # ════════════════════════════════════════════════════════════════════════
 
 @st.cache_data(ttl=3600)
 def get_all_stocks() -> pd.DataFrame:
-    """
-    抓取全台股上市 + 上櫃普通股清單。
-    所有 requests.get 加上 verify=False 解決 Streamlit Cloud SSL 問題。
-    快取 1 小時，避免重複請求。
-    """
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                       "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -88,8 +137,8 @@ def get_all_stocks() -> pd.DataFrame:
     # ── 上市（TWSE）────────────────────────────────────────────────
     df_twse = pd.DataFrame()
     try:
-        url  = "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"
-        res  = requests.get(url, headers=headers, timeout=15, verify=False)  # ← SSL修復
+        url = "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"
+        res = requests.get(url, headers=headers, timeout=15, verify=False)
         res.raise_for_status()
         data = res.json()
         df   = pd.DataFrame(data)[["Code", "Name"]]
@@ -97,13 +146,13 @@ def get_all_stocks() -> pd.DataFrame:
         df   = df[df["代號"].str.match(r"^\d{4}$")]
         df["YF代號"] = df["代號"] + ".TW"
         df["市場"]   = "上市(TWSE)"
-        df_twse      = df
+        df_twse = df
     except Exception as e:
         st.warning(f"⚠️ 上市清單主要來源失敗：{e}，嘗試備用方案...")
         try:
             url = "https://isin.twse.com.tw/isin/C_public.jsp?strMode=2"
-            res = requests.get(url, headers={"User-Agent":"Mozilla/5.0"},
-                               timeout=15, verify=False)               # ← SSL修復
+            res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"},
+                               timeout=15, verify=False)
             res.encoding = "big5"
             tables = pd.read_html(res.text)
             df     = tables[0].copy()
@@ -117,15 +166,15 @@ def get_all_stocks() -> pd.DataFrame:
             df     = df[df["代號"].str.match(r"^\d{4}$", na=False)]
             df["YF代號"] = df["代號"] + ".TW"
             df["市場"]   = "上市(TWSE)"
-            df_twse      = df[["代號", "名稱", "YF代號", "市場"]]
+            df_twse = df[["代號", "名稱", "YF代號", "市場"]]
         except Exception as e2:
-            st.error(f"❌ 上市清單備用方案也失敗：{e2}")
+            st.error(f"❌ 上市清單備用方案失敗：{e2}")
 
     # ── 上櫃（TPEx）────────────────────────────────────────────────
     df_tpex = pd.DataFrame()
     try:
-        url  = "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes"
-        res  = requests.get(url, headers=headers, timeout=15, verify=False)  # ← SSL修復
+        url = "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes"
+        res = requests.get(url, headers=headers, timeout=15, verify=False)
         res.raise_for_status()
         data = res.json()
         df   = pd.DataFrame(data)[["SecuritiesCompanyCode", "CompanyName"]]
@@ -133,13 +182,13 @@ def get_all_stocks() -> pd.DataFrame:
         df   = df[df["代號"].str.match(r"^\d{4}$")]
         df["YF代號"] = df["代號"] + ".TWO"
         df["市場"]   = "上櫃(TPEx)"
-        df_tpex      = df
+        df_tpex = df
     except Exception as e:
         st.warning(f"⚠️ 上櫃清單主要來源失敗：{e}，嘗試備用方案...")
         try:
             url = "https://isin.twse.com.tw/isin/C_public.jsp?strMode=4"
-            res = requests.get(url, headers={"User-Agent":"Mozilla/5.0"},
-                               timeout=15, verify=False)               # ← SSL修復
+            res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"},
+                               timeout=15, verify=False)
             res.encoding = "big5"
             tables = pd.read_html(res.text)
             df     = tables[0].copy()
@@ -153,11 +202,10 @@ def get_all_stocks() -> pd.DataFrame:
             df     = df[df["代號"].str.match(r"^\d{4}$", na=False)]
             df["YF代號"] = df["代號"] + ".TWO"
             df["市場"]   = "上櫃(TPEx)"
-            df_tpex      = df[["代號", "名稱", "YF代號", "市場"]]
+            df_tpex = df[["代號", "名稱", "YF代號", "市場"]]
         except Exception as e2:
-            st.error(f"❌ 上櫃清單備用方案也失敗：{e2}")
+            st.error(f"❌ 上櫃清單備用方案失敗：{e2}")
 
-    # ── 合併上市 + 上櫃 ─────────────────────────────────────────────
     frames = [f for f in [df_twse, df_tpex] if not f.empty]
     if not frames:
         st.error("❌ 無法取得任何股票清單，請稍後再試。")
@@ -179,7 +227,6 @@ def download_all_data(
         progress_bar,
         status_text,
 ) -> dict:
-    """批次下載全市場歷史 K 線，每批更新進度條。"""
     end_date   = datetime.today()
     start_date = end_date - timedelta(days=int(lookback_days * 1.5))
     end_str    = end_date.strftime("%Y-%m-%d")
@@ -207,7 +254,6 @@ def download_all_data(
                 progress    = False,
                 threads     = True,
             )
-
             if len(batch) == 1:
                 ticker = batch[0]
                 if not raw.empty:
@@ -220,7 +266,6 @@ def download_all_data(
                             all_data[ticker] = df_s
                     except (KeyError, TypeError):
                         pass
-
         except Exception:
             pass
 
@@ -235,17 +280,15 @@ def download_all_data(
 # ════════════════════════════════════════════════════════════════════════
 
 def calculate_recommendation_score(
-        vol_ratio  : float,
-        tangle_val : float,
-        body_pct   : float,
-        is_gap_up  : bool,
-        cfg        : dict
+        vol_ratio : float,
+        tangle_val: float,
+        body_pct  : float,
+        is_gap_up : bool,
+        cfg       : dict
 ) -> tuple[int, dict]:
-    """計算推薦指數（0~100分）並回傳各項加分明細。"""
     bd = {}
     bd["基礎分"] = cfg["base_score"]
 
-    # 爆發力加分
     if vol_ratio >= cfg["vol_tier_high_min"]:
         bd["爆發力"] = cfg["vol_tier_high_score"]
     elif vol_ratio >= cfg["vol_tier_mid_min"]:
@@ -253,7 +296,6 @@ def calculate_recommendation_score(
     else:
         bd["爆發力"] = cfg["vol_tier_low_score"]
 
-    # 籌碼集中加分
     if pd.notna(tangle_val):
         if tangle_val < cfg["tangle_tier_high_max"]:
             bd["籌碼集中"] = cfg["tangle_tier_high_score"]
@@ -264,7 +306,6 @@ def calculate_recommendation_score(
     else:
         bd["籌碼集中"] = 0
 
-    # 鎖碼強勢加分
     if pd.notna(body_pct):
         if body_pct >= cfg["body_tier_high_min"]:
             bd["鎖碼強勢"] = cfg["body_tier_high_score"]
@@ -275,15 +316,12 @@ def calculate_recommendation_score(
     else:
         bd["鎖碼強勢"] = 0
 
-    # 跳空加分
     bd["跳空表態"] = cfg["gap_up_score"] if is_gap_up else 0
-
     total = min(sum(bd.values()), 100)
     return total, bd
 
 
 def get_grade_label(score: int, cfg: dict) -> str:
-    """依分數回傳推薦等級標籤。"""
     if score >= cfg["grade_s_min"]:
         return "🔥 S級｜強烈推薦"
     elif score >= cfg["grade_a_min"]:
@@ -297,37 +335,30 @@ def get_grade_label(score: int, cfg: dict) -> str:
 # ════════════════════════════════════════════════════════════════════════
 
 def apply_filter_v5(
-        ticker : str,
-        df     : pd.DataFrame,
-        params : dict,
-        cfg    : dict
+        ticker: str,
+        df    : pd.DataFrame,
+        params: dict,
+        cfg   : dict
 ) -> dict | None:
-    """套用 v5.0 選股條件並計算推薦指數，通過回傳字典，否則回傳 None。"""
     p = params
-
-    # ── 資料清洗 ────────────────────────────────────────────────────
     required = ["Open", "High", "Low", "Close", "Volume"]
     if not all(c in df.columns for c in required):
         return None
 
     df = df[required].copy().dropna(subset=["Close", "Volume"])
-
     before = len(df)
     df = df[df["Volume"] > 0]
     if before > 0 and (before - len(df)) / before > 0.20:
         return None
-
     if len(df) < p["min_bars"]:
         return None
 
-    # ── 新鮮度檢查 ──────────────────────────────────────────────────
     last_date = df.index[-1]
     if hasattr(last_date, "tzinfo") and last_date.tzinfo is not None:
         last_date = last_date.tz_localize(None)
     if (datetime.now() - last_date).days > p["max_days_stale"]:
         return None
 
-    # ── 技術指標計算 ────────────────────────────────────────────────
     df["avg_vol_5"] = df["Volume"].shift(1).rolling(p["vol_window"]).mean()
     df["high_20"]   = df["High"].shift(1).rolling(p["high_window"]).max()
     df["ma5"]       = df["Close"].rolling(p["ma_fast"]).mean()
@@ -337,7 +368,7 @@ def apply_filter_v5(
     cr             = df["High"] - df["Low"]
     df["body_pct"] = (df["Close"] - df["Low"]) / cr.replace(0, float("nan"))
 
-    ma5p  = df["ma5"].shift(1)
+    ma5p = df["ma5"].shift(1)
     ma10p = df["ma10"].shift(1)
     ma20p = df["ma20"].shift(1)
     stk   = pd.concat([ma5p, ma10p, ma20p], axis=1)
@@ -352,23 +383,22 @@ def apply_filter_v5(
     last = df.iloc[-1]
     prev = df.iloc[-2]
 
-    o  = last["Open"];    h  = last["High"]
-    l  = last["Low"];     c  = last["Close"]
+    o  = last["Open"];  h  = last["High"]
+    l  = last["Low"];   c  = last["Close"]
     v  = last["Volume"]
     avg_vol   = last["avg_vol_5"]
     high_20   = last["high_20"]
-    ma5_v     = last["ma5"];    ma10_v  = last["ma10"]
-    ma20_v    = last["ma20"];   ma20_pv = prev["ma20"]
+    ma5_v     = last["ma5"];   ma10_v  = last["ma10"]
+    ma20_v    = last["ma20"];  ma20_pv = prev["ma20"]
     bpct      = last["body_pct"]
     tangle_v  = last["ma_tangle"]
-    prev_high = prev["High"];   prev_close = prev["Close"]
+    prev_high = prev["High"];  prev_close = prev["Close"]
 
-    # ── 七大基礎條件 ────────────────────────────────────────────────
     conds = [
         c >= p["min_price"],
-        (avg_vol > p["liquidity_vol"])        if pd.notna(avg_vol)  else False,
-        (v > avg_vol * p["vol_multiplier"])   if pd.notna(avg_vol)  else False,
-        (c >= high_20)                        if pd.notna(high_20)  else False,
+        (avg_vol > p["liquidity_vol"])       if pd.notna(avg_vol) else False,
+        (v > avg_vol * p["vol_multiplier"])  if pd.notna(avg_vol) else False,
+        (c >= high_20)                       if pd.notna(high_20) else False,
         (c > o) and pd.notna(bpct) and (bpct >= p["body_ratio"]),
         pd.notna(ma5_v) and pd.notna(ma10_v) and (c > ma5_v > ma10_v),
         pd.notna(ma20_v) and pd.notna(ma20_pv)
@@ -377,7 +407,6 @@ def apply_filter_v5(
     if not all(conds):
         return None
 
-    # ── 評分計算 ────────────────────────────────────────────────────
     vol_ratio = v / avg_vol if avg_vol > 0 else 0
     is_gap_up = (l > prev_high) if pd.notna(prev_high) else False
 
@@ -421,7 +450,21 @@ def apply_filter_v5(
 
 # ════════════════════════════════════════════════════════════════════════
 # 【模組五】DataFrame 樣式
+# ✅ 修復：applymap → map（Pandas 2.x 相容）
 # ════════════════════════════════════════════════════════════════════════
+
+def _safe_map(styled, func, subset):
+    """
+    相容 Pandas 新舊版本：
+      Pandas >= 2.1 → 使用 map()
+      Pandas <  2.1 → 使用 applymap()
+    """
+    pd_version = tuple(int(x) for x in pd.__version__.split(".")[:2])
+    if pd_version >= (2, 1):
+        return styled.map(func, subset=subset)
+    else:
+        return styled.applymap(func, subset=subset)
+
 
 def style_result_df(df: pd.DataFrame):
     """套用漸層顏色樣式到結果 DataFrame。"""
@@ -455,19 +498,21 @@ def style_result_df(df: pd.DataFrame):
 
     styled = df.style
     grad_cols = {
-        "推薦指數" : ("YlOrRd",   60,  100),
-        "量比(倍)" : ("Reds",    2.5,    8),
-        "漲幅(%)"  : ("RdYlGn",  -2,    10),
-        "均線糾結度": ("Purples_r", 0, 0.05),
+        "推薦指數"  : ("YlOrRd",    60,  100),
+        "量比(倍)"  : ("Reds",     2.5,    8),
+        "漲幅(%)"   : ("RdYlGn",   -2,    10),
+        "均線糾結度": ("Purples_r",  0, 0.05),
     }
     for col, (cmap, vmin, vmax) in grad_cols.items():
         if col in df.columns:
-            styled = styled.background_gradient(subset=[col], cmap=cmap, vmin=vmin, vmax=vmax)
+            styled = styled.background_gradient(
+                subset=[col], cmap=cmap, vmin=vmin, vmax=vmax
+            )
 
-    if "推薦等級"  in df.columns:
-        styled = styled.applymap(highlight_grade, subset=["推薦等級"])
+    if "推薦等級"   in df.columns:
+        styled = _safe_map(styled, highlight_grade, subset=["推薦等級"])
     if "有跳空缺口" in df.columns:
-        styled = styled.applymap(highlight_gap,   subset=["有跳空缺口"])
+        styled = _safe_map(styled, highlight_gap,   subset=["有跳空缺口"])
 
     return styled.format(fmt, na_rep="N/A")
 
@@ -493,7 +538,9 @@ def style_score_df(df: pd.DataFrame):
     }
     for col, (cmap, vmin, vmax) in grad.items():
         if col in df.columns:
-            styled = styled.background_gradient(subset=[col], cmap=cmap, vmin=vmin, vmax=vmax)
+            styled = styled.background_gradient(
+                subset=[col], cmap=cmap, vmin=vmin, vmax=vmax
+            )
     return styled.format(fmt, na_rep="N/A")
 
 
@@ -531,17 +578,16 @@ def main():
             help="只掃描前 300 檔，避免雲端記憶體不足。本機執行可關閉。"
         )
 
-        lookback_days = st.slider("歷史資料天數", 45, 90, 60, 5)
-        batch_size    = st.slider("批次下載大小", 20, 100, 50, 10)
+        lookback_days = st.slider("歷史資料天數",  45,  90,  60,  5)
+        batch_size    = st.slider("批次下載大小",  20, 100,  50, 10)
 
         st.markdown("---")
         st.markdown("### 🛡️ 基礎過濾條件")
-
-        min_price      = st.slider("最低股價（元）",    5,   50,  15,  5)
+        min_price      = st.slider("最低股價（元）",     5,   50,  15,  5)
         liquidity_vol  = st.slider("最低流動性（張）", 100, 2000, 500, 100)
-        vol_multiplier = st.slider("爆量倍數",         1.5,  5.0, 2.5, 0.5)
-        body_ratio     = st.slider("實體K棒比例",      0.50, 0.95, 0.75, 0.05)
-        max_days_stale = st.slider("資料新鮮度（天）",   1,    7,   3,   1)
+        vol_multiplier = st.slider("爆量倍數",          1.5,  5.0, 2.5, 0.5)
+        body_ratio     = st.slider("實體K棒比例",       0.50, 0.95, 0.75, 0.05)
+        max_days_stale = st.slider("資料新鮮度（天）",    1,    7,   3,   1)
 
         st.markdown("---")
         st.markdown("### 🏆 推薦等級門檻")
@@ -556,10 +602,12 @@ def main():
         )
 
         st.markdown("---")
-        st.markdown("""
-        <div style='color:#666;font-size:0.8rem;text-align:center;'>
-            台股選股器 v5.0<br>⚠️ 僅供技術分析參考<br>不構成任何投資建議
-        </div>""", unsafe_allow_html=True)
+        st.markdown(
+            "<div style='font-size:0.8rem;text-align:center;color:#555;'>"
+            "台股選股器 v5.0<br>⚠️ 僅供技術分析參考<br>不構成任何投資建議"
+            "</div>",
+            unsafe_allow_html=True
+        )
 
     # ════════════════════════════════════════════════════════════════
     # 【說明頁（未掃描時）】
@@ -616,7 +664,6 @@ def main():
         "min_price"      : min_price,
         "max_days_stale" : max_days_stale,
     }
-
     SCORE_CONFIG = {
         "base_score"             : 60,
         "vol_tier_high_min"      : 5.0,
@@ -650,13 +697,11 @@ def main():
             st.error("❌ 無法取得股票清單，請稍後再試。")
             return
 
-        # 依市場選擇過濾
         if "僅上市" in market_choice:
             df_all_stocks = df_all_stocks[df_all_stocks["市場"] == "上市(TWSE)"]
         elif "僅上櫃" in market_choice:
             df_all_stocks = df_all_stocks[df_all_stocks["市場"] == "上櫃(TPEx)"]
 
-        # 輕量模式：只取前 300 檔
         if lite_mode:
             df_all_stocks = df_all_stocks.head(300)
             st.info("⚡ 輕量模式：掃描前 300 檔，約需 3~5 分鐘。")
@@ -670,7 +715,6 @@ def main():
     # ════════════════════════════════════════════════════════════════
     with st.status("📥 步驟 2/3：批次下載歷史資料...", expanded=True) as status:
         st.write(f"開始下載 {total_stocks:,} 檔股票的歷史 K 線資料...")
-
         progress_bar = st.progress(0, text="準備下載...")
         status_text  = st.empty()
 
@@ -684,7 +728,6 @@ def main():
 
         progress_bar.progress(1.0, text="✅ 下載完成！")
         status_text.empty()
-
         success_count = len(all_data)
         st.write(f"✅ 成功下載 **{success_count:,}** 檔")
         status.update(label=f"✅ 步驟 2/3 完成：下載 {success_count:,} 檔", state="complete")
@@ -695,11 +738,11 @@ def main():
     with st.status("🔍 步驟 3/3：執行選股與評分...", expanded=True) as status:
         st.write("套用 7 道基礎過濾條件並計算推薦指數...")
 
-        market_map   = dict(zip(df_all_stocks["YF代號"], df_all_stocks["市場"]))
-        name_map     = dict(zip(df_all_stocks["YF代號"], df_all_stocks["名稱"]))
-        results      = []
-        ticker_list  = list(all_data.items())
-        scan_total   = len(ticker_list)
+        market_map    = dict(zip(df_all_stocks["YF代號"], df_all_stocks["市場"]))
+        name_map      = dict(zip(df_all_stocks["YF代號"], df_all_stocks["名稱"]))
+        results       = []
+        ticker_list   = list(all_data.items())
+        scan_total    = len(ticker_list)
         scan_progress = st.progress(0, text="選股掃描中...")
 
         for i, (ticker, df_stock) in enumerate(ticker_list):
@@ -750,7 +793,7 @@ def main():
     ]
     df_b = df_result[df_result["推薦指數"] < SCORE_CONFIG["grade_a_min"]]
 
-    # ── 頂部 Metric 卡片 ─────────────────────────────────────────────
+    # ── Metric 卡片 ──────────────────────────────────────────────────
     st.markdown(f"### 📊 掃描結果摘要 — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("📊 掃描總檔數",  f"{success_count:,} 檔")
@@ -776,7 +819,6 @@ def main():
             f"**{df_result.iloc[0]['推薦指數']} 分**"
         )
     else:
-        # 卡片式呈現
         cols_per_row = 3
         s_list = df_s.reset_index(drop=True)
         for row_start in range(0, len(s_list), cols_per_row):
@@ -794,7 +836,7 @@ def main():
         <div>
             <span class="ticker">{row['代號']}</span>
             <span class="name"> {row['公司名稱']}</span><br>
-            <small style="color:#666">{row['市場']} | {row['訊號日期']}</small>
+            <small style="color:#aaa">{row['市場']} | {row['訊號日期']}</small>
         </div>
         <div class="score">{row['推薦指數']}<small style="font-size:0.8rem">分</small></div>
     </div>
@@ -807,7 +849,6 @@ def main():
 </div>
                     """, unsafe_allow_html=True)
 
-        # S級精簡表格
         st.markdown("#### 📋 S 級標的精簡表")
         s_cols    = ["代號","公司名稱","市場","收盤價","漲幅(%)","量比(倍)","推薦指數","推薦等級"]
         s_cols    = [c for c in s_cols if c in df_s.columns]
@@ -853,8 +894,11 @@ def main():
             return
         d = df_sub[detail_cols].reset_index(drop=True)
         d.index += 1
-        st.dataframe(style_result_df(d), use_container_width=True,
-                     height=min(600, 50 + len(d) * 38))
+        st.dataframe(
+            style_result_df(d),
+            use_container_width=True,
+            height=min(600, 50 + len(d) * 38)
+        )
 
     with tab_all:   show_tab(df_result)
     with tab_s:     show_tab(df_s)
@@ -865,11 +909,14 @@ def main():
         st.markdown("#### 🔬 推薦指數加分明細")
         sc = ["代號","公司名稱","推薦指數","基礎分",
               "爆發力加分","籌碼集中加分","鎖碼強勢加分","跳空加分"]
-        sc = [c for c in sc if c in df_result.columns]
+        sc    = [c for c in sc if c in df_result.columns]
         df_sc = df_result[sc].reset_index(drop=True)
         df_sc.index += 1
-        st.dataframe(style_score_df(df_sc), use_container_width=True,
-                     height=min(600, 50 + len(df_sc) * 38))
+        st.dataframe(
+            style_score_df(df_sc),
+            use_container_width=True,
+            height=min(600, 50 + len(df_sc) * 38)
+        )
 
     st.markdown("<hr class='section-divider'>", unsafe_allow_html=True)
 
@@ -881,8 +928,10 @@ def main():
     with c1:
         st.markdown("#### 推薦等級分佈")
         st.bar_chart(
-            pd.DataFrame({"標的數": [len(df_s), len(df_a), len(df_b)]},
-                         index=["🔥 S級", "⭐ A級", "👀 B級"]),
+            pd.DataFrame(
+                {"標的數": [len(df_s), len(df_a), len(df_b)]},
+                index=["🔥 S級", "⭐ A級", "👀 B級"]
+            ),
             color="#e94560"
         )
     with c2:
